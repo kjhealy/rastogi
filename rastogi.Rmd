@@ -1,0 +1,118 @@
+---
+title: "Map issue"
+author: "Kieran healy"
+date: "11/5/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(ggplot2)
+library(maptools)
+library(mapproj)
+library(rgeos)
+
+
+library(rgdal)
+library(gdalUtils)
+
+library(scales)
+
+theme_set(theme_minimal())
+
+```
+
+
+## An Albers projection string
+```{r}
+aea_proj  <- "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23
++lon_0=-96 +datum=WGS84 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
+
+```
+
+
+## Data
+
+### Book / County data
+
+US County data as per Bob Rudis and the book
+
+```{r}
+ogrInfo("us_counties/gz_2010_us_050_00_5m.json")
+county_raw <- readOGR(dsn="us_counties/gz_2010_us_050_00_5m.json")
+```
+
+### 2017 TIGER/Line state shapefiles from Minnesota Pop Center
+
+```{r}
+ogrListLayers("min_pop")
+
+state_raw <- readOGR(dsn = "min_pop", layer = "US_state_2017")
+
+```
+
+
+# The map sizes are different
+
+This messes up the manual transformation.
+
+## Counties
+
+```{r}
+county_aea <- spTransform(county_raw, aea_proj)
+
+raster::crs(county_aea)
+raster::extent(county_aea)
+bbox(county_aea)
+```
+
+## County Plot
+
+```{r}
+p <- ggplot(data = county_aea, 
+            mapping = aes(x=long, y=lat, group=group))
+
+p + geom_polygon(color="gray80",
+                   size=0.2) + 
+    scale_y_continuous(labels = scales::comma) +
+    scale_x_continuous(labels = scales::comma,
+                       breaks = c(-7e6, -6e6, -4e6, -2e6,
+                                  0, 2e6, 3e6))
+
+```
+
+## States
+
+```{r}
+state_aea <- spTransform(state_raw, aea_proj)
+
+## Simplify polygons---otherwise it's huge
+## This will take a little while
+state_aea_sim <- rmapshaper::ms_simplify(state_aea, keep = 0.01)
+
+raster::crs(state_aea_sim)
+raster::extent(state_aea_sim)
+bbox(state_aea_sim)
+```
+
+Notice now `xmin` differs by a lot. I think this is what's messing things up when we slice out Alaska and Hawaii. The boxes defining those areas are larger in the State map, including more ocean/white space, and this botches the insertion into the lower 48 map.
+
+## State Plot
+
+```{r}
+p <- ggplot(data=state_aea_sim,
+            aes(x=long, y=lat, group=group)) 
+
+p + geom_polygon(color="gray80",
+                   size=0.2) + 
+    scale_y_continuous(labels = scales::comma) +
+    scale_x_continuous(labels = scales::comma,
+                       breaks = c(-7e6, -6e6, -4e6, -2e6,
+                                  0, 2e6, 3e6))
+
+```
+
+
+
